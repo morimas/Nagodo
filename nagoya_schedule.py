@@ -2,7 +2,7 @@ import sys
 import re
 import ssl
 import html
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import urllib.request
 import os
 
@@ -13,6 +13,9 @@ BASE_URL = "https://www.nagoya-dome.co.jp/sp/eventcalen.php"
 
 # 関係者イベントを非表示にする場合は True、表示する場合は False
 HIDE_PRIVATE_EVENTS = True
+
+# 日本時間（JST）の定義
+JST = timezone(timedelta(hours=9))
 
 # ==============================================================================
 # 日付計算ロジック
@@ -112,6 +115,12 @@ def collect_schedule_data(base_date):
                         current_key = None
 
                 elif current_key is not None:
+                    # 「◯月は予定がありません」等の月境界メッセージは日付を持たないため
+                    # ここで明示的に除外しないと、直前の対象日に誤って吸着してしまう
+                    if re.search(r'予定がありません', text_content):
+                        continue
+
+                    # システムナビゲーション要素を除外して同日のテキストをすべて配列に格納
                     if len(text_content) > 1 and not re.search(r'^(トップ|カレンダー|HOME|pagetop|次へ|前へ|戻る|イベント|バンテリン|URL)', text_content, re.IGNORECASE):
                         if text_content not in events_by_date[current_key]:
                             events_by_date[current_key].append(text_content)
@@ -184,7 +193,7 @@ def generate_html(schedule_list, target_dates, fetch_error):
     """
     range_start_str = target_dates[0].strftime("%Y/%m/%d")
     range_end_str = target_dates[-1].strftime("%Y/%m/%d")
-    generated_at = datetime.now().strftime("%Y/%m/%d %H:%M")
+    generated_at = datetime.now(JST).strftime("%Y/%m/%d %H:%M")
 
     rows_html = ""
     total_event_count = 0
@@ -264,9 +273,9 @@ if __name__ == "__main__":
         try:
             base_date = datetime.strptime(sys.argv[1], "%Y-%m-%d").date()
         except ValueError:
-            base_date = datetime.now().date()
+            base_date = datetime.now(JST).date()
     else:
-        base_date = datetime.now().date()
+        base_date = datetime.now(JST).date()
 
     schedule_list, target_dates, fetch_error = collect_schedule_data(base_date)
     print_console(schedule_list, target_dates, fetch_error)
