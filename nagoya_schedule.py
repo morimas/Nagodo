@@ -126,6 +126,7 @@ def fetch_schedule(base_date):
 
             except urllib.error.HTTPError as e:
                 if e.code == 404:
+                    print(f"[情報] {y}年{m}月のイベントページは現在公開されていません (404)")
                     continue
                 else:
                     print(f"[通信注意] {y}年{m}月のデータ取得に失敗しました (HTTP Error {e.code})")
@@ -208,7 +209,6 @@ if __name__ == "__main__":
         print(f"\nエラーが発生しました: {e}", file=sys.stderr)
         sys.exit(1)
     finally:
-        # GitHub ActionsなどのCI環境ではinput()をスキップして異常終了を防ぐ
         if not os.getenv("CI"):
             try:
                 print("\n")
