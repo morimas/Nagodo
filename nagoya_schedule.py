@@ -125,7 +125,6 @@ def fetch_schedule(base_date):
                                     events_by_date[date_key].append(clean_text)
 
             except urllib.error.HTTPError as e:
-                # 404などのHTTPエラー時は該当月にデータ（ページ）が無いものとして静かにスキップ
                 if e.code == 404:
                     continue
                 else:
@@ -206,7 +205,13 @@ if __name__ == "__main__":
 
         fetch_schedule(base_date)
     except Exception as e:
-        print(f"\nエラーが発生しました: {e}")
+        print(f"\nエラーが発生しました: {e}", file=sys.stderr)
+        sys.exit(1)
     finally:
-        print("\n")
-        input("Enterキーを押すと終了します...")
+        # GitHub ActionsなどのCI環境ではinput()をスキップして異常終了を防ぐ
+        if not os.getenv("CI"):
+            try:
+                print("\n")
+                input("Enterキーを押すと終了します...")
+            except (KeyboardInterrupt, EOFError):
+                pass
