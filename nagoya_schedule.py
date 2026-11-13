@@ -106,10 +106,6 @@ def fetch_schedule(base_date):
         console_lines.append(message)
         html_lines.append(html_message if html_message is not None else html.escape(message))
 
-    # 冒頭はシンプルに対象期間の1行のみ
-    log(f"対象期間: {range_start_str} 〜 {range_end_str}", f"対象期間: {range_start_str} 〜 {range_end_str}")
-    log("", "")
-
     events_by_date = {}
     years_months = set((d.year, d.month) for d in target_dates)
 
@@ -274,7 +270,9 @@ def fetch_schedule(base_date):
                 
                 log("", "")
 
+    # 末尾のまとめブロック
     log("----------------------------------------------------", "----------------------------------------------------")
+    log(f"対象期間: {range_start_str} 〜 {range_end_str}", f"対象期間: {range_start_str} 〜 {range_end_str}")
     if total_event_count == 0:
         log("対象期間中に該当する一般イベントはありません。", "対象期間中に該当する一般イベントはありません。")
     else:
