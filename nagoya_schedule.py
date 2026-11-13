@@ -14,6 +14,9 @@ BASE_URL = "https://www.nagoya-dome.co.jp/sp/eventcalen.php"
 # 関係者イベントを非表示にする場合は True、表示する場合は False
 HIDE_PRIVATE_EVENTS = True
 
+# 出力ファイル名（GitHub Pages等の公開ファイル）
+OUTPUT_FILENAME = "index.html"
+
 # ==============================================================================
 # コンソールカラー定義（ANSI Escape Code）
 # ==============================================================================
@@ -95,12 +98,19 @@ def fetch_schedule(base_date):
     range_start_str = target_dates[0].strftime("%Y/%m/%d")
     range_end_str = target_dates[-1].strftime("%Y/%m/%d")
 
-    print("＋--------------------------------------------------＋")
-    print(f"  バンテリンドーム ナゴヤ イベントスケジュール")
-    print(f"  対象期間: {range_start_str} 〜 {range_end_str}")
+    # 出力をバッファ（リスト）に蓄積して、コンソール表示とファイル書き込みを両立する
+    output_lines = []
+
+    def log(message=""):
+        print(message)
+        output_lines.append(message)
+
+    log("＋--------------------------------------------------＋")
+    log(f"  バンテリンドーム ナゴヤ イベントスケジュール")
+    log(f"  対象期間: {range_start_str} 〜 {range_end_str}")
     if HIDE_PRIVATE_EVENTS:
-        print("  ※関係者イベントは除外して表示中")
-    print("＋--------------------------------------------------＋\n")
+        log("  ※関係者イベントは除外して表示中")
+    log("＋--------------------------------------------------＋\n")
 
     events_by_date = {}
     years_months = set((d.year, d.month) for d in target_dates)
@@ -183,9 +193,9 @@ def fetch_schedule(base_date):
             if e.code == 404:
                 continue
             else:
-                print(f"[通信注意] {y}年{m}月のデータ取得に失敗しました (HTTP Error {e.code})")
+                log(f"[通信注意] {y}年{m}月のデータ取得に失敗しました (HTTP Error {e.code})")
         except Exception as e:
-            print(f"[通信注意] {y}年{m}月のデータ取得エラー: {e}")
+            log(f"[通信注意] {y}年{m}月のデータ取得エラー: {e}")
 
     total_event_count = 0
 
@@ -208,7 +218,6 @@ def fetch_schedule(base_date):
                 pure_title = re.sub(r'[／〜～]', ' ', pure_title).strip()
                 pure_title = re.sub(r'\s+', ' ', pure_title)
                 
-                # 「開場」「開始」などの単体ワードを完全に除外
                 if pure_title in ["開場", "開始", "／", "開場 開始", ""] or re.match(r'^[開場開始\s／]+$', pure_title):
                     continue
                 
@@ -244,23 +253,52 @@ def fetch_schedule(base_date):
                 else:
                     display_date = formatted_date_raw
 
-                print(f" {display_date}")
+                log(f" {display_date}")
 
                 for title in valid_events:
-                    print(f"   └─ {title}")
+                    log(f"   └─ {title}")
                     total_event_count += 1
                 
                 if time_str:
-                    print(f"   └─ {time_str}")
+                    log(f"   └─ {time_str}")
                 
-                print()
+                log()
 
-    print("----------------------------------------------------")
+    log("----------------------------------------------------")
     if total_event_count == 0:
-        print(" 対象期間中に該当する一般イベントはありません。")
+        log(" 対象期間中に該当する一般イベントはありません。")
     else:
-        print(f" 該当イベント数: 計 {total_event_count} 件")
-    print("----------------------------------------------------")
+        log(f" 該当イベント数: 計 {total_event_count} 件")
+    log(f" 最終更新: {datetime.now().strftime('%Y/%m/%d %H:%M')}")
+    log("----------------------------------------------------")
+
+    # --------------------------------------------------------------------------
+    # index.html へのファイル書き出し処理（ANSIカラーコードを除去して保存）
+    # --------------------------------------------------------------------------
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    file_content_lines = [ansi_escape.sub('', line) for line in output_lines]
+    
+    html_output = f"""<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>バンテリンドーム ナゴヤ イベントスケジュール</title>
+    <style>
+        body {{ font-family: monospace, sans-serif; background: #f4f4f4; padding: 20px; color: #333; }}
+        pre {{ background: #fff; padding: 15px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); font-size: 14px; line-height: 1.5; }}
+    </style>
+</head>
+<body>
+    <pre>{'\n'.join(file_content_lines)}</pre>
+</body>
+</html>
+"""
+
+    with open(OUTPUT_FILENAME, "w", encoding="utf-8") as f:
+        f.write(html_output)
+    
+    print(f"\n[情報] 結果を {OUTPUT_FILENAME} に正常に書き出しました。")
 
 # ==============================================================================
 # 実行部
