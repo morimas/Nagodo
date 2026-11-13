@@ -106,12 +106,9 @@ def fetch_schedule(base_date):
         console_lines.append(message)
         html_lines.append(html_message if html_message is not None else html.escape(message))
 
-    log("＋--------------------------------------------------＋", "＋--------------------------------------------------＋")
-    log(f"  バンテリンドーム ナゴヤ イベントスケジュール", "  バンテリンドーム ナゴヤ イベントスケジュール")
-    log(f"  対象期間: {range_start_str} 〜 {range_end_str}", f"  対象期間: {range_start_str} 〜 {range_end_str}")
-    if HIDE_PRIVATE_EVENTS:
-        log("  ※関係者イベントは除外して表示中", "  ※関係者イベントは除外して表示中")
-    log("＋--------------------------------------------------＋\n", "＋--------------------------------------------------＋\n")
+    # 冒頭はシンプルに対象期間の1行のみ
+    log(f"対象期間: {range_start_str} 〜 {range_end_str}", f"対象期間: {range_start_str} 〜 {range_end_str}")
+    log("", "")
 
     events_by_date = {}
     years_months = set((d.year, d.month) for d in target_dates)
@@ -245,7 +242,6 @@ def fetch_schedule(base_date):
                 weekday_num = current_date.weekday()
                 weekday_kanji = ["月", "火", "水", "木", "金", "土", "日"][weekday_num]
                 
-                # 生データのどこかに「祝」が含まれているか、あるいは日曜(6)か判定
                 is_holiday = any("祝" in str(item) for item in raw_items) or (weekday_num == 6)
                 is_saturday = (weekday_num == 5)
 
@@ -259,7 +255,7 @@ def fetch_schedule(base_date):
                 else:
                     display_date_con = formatted_date_raw
 
-                # HTML用カラー（inline CSS）
+                # HTML用カラー（土曜:青、日曜祝日:赤）
                 if is_saturday:
                     display_date_html = f'<span style="color: #0066cc; font-weight: bold;">{html.escape(formatted_date_raw)}</span>'
                 elif is_holiday:
@@ -267,7 +263,7 @@ def fetch_schedule(base_date):
                 else:
                     display_date_html = f'<span style="font-weight: bold;">{html.escape(formatted_date_raw)}</span>'
 
-                log(f" {display_date_con}", f" {display_date_html}")
+                log(f"{display_date_con}", f"{display_date_html}")
 
                 for title in valid_events:
                     log(f"   └─ {title}", f"   └─ {html.escape(title)}")
@@ -280,13 +276,12 @@ def fetch_schedule(base_date):
 
     log("----------------------------------------------------", "----------------------------------------------------")
     if total_event_count == 0:
-        log(" 対象期間中に該当する一般イベントはありません。", " 対象期間中に該当する一般イベントはありません。")
+        log("対象期間中に該当する一般イベントはありません。", "対象期間中に該当する一般イベントはありません。")
     else:
-        log(f" 該当イベント数: 計 {total_event_count} 件", f" 該当イベント数: 計 {total_event_count} 件")
-    log(f" 最終更新: {datetime.now().strftime('%Y/%m/%d %H:%M')}", f" 最終更新: {datetime.now().strftime('%Y/%m/%d %H:%M')}")
+        log(f"該当イベント数: 計 {total_event_count} 件", f"該当イベント数: 計 {total_event_count} 件")
+    log(f"最終更新: {datetime.now().strftime('%Y/%m/%d %H:%M')}", f"最終更新: {datetime.now().strftime('%Y/%m/%d %H:%M')}")
     log("----------------------------------------------------", "----------------------------------------------------")
 
-    # index.html へのファイル書き出し（HTML用カラータグをそのまま埋め込む）
     joined_html_lines = '\n'.join(html_lines)
     
     html_output = f"""<!DOCTYPE html>
