@@ -98,7 +98,6 @@ def fetch_schedule(base_date):
     range_start_str = target_dates[0].strftime("%Y/%m/%d")
     range_end_str = target_dates[-1].strftime("%Y/%m/%d")
 
-    # 出力をバッファ（リスト）に蓄積して、コンソール表示とファイル書き込みを両立する
     output_lines = []
 
     def log(message=""):
@@ -199,7 +198,6 @@ def fetch_schedule(base_date):
 
     total_event_count = 0
 
-    # 対象期間の日付順に出力（予定のない日は完全にスキップ＝空欄非表示）
     for current_date in target_dates:
         key = (current_date.month, current_date.day)
         raw_items = events_by_date.get(key, [])
@@ -272,11 +270,11 @@ def fetch_schedule(base_date):
     log(f" 最終更新: {datetime.now().strftime('%Y/%m/%d %H:%M')}")
     log("----------------------------------------------------")
 
-    # --------------------------------------------------------------------------
-    # index.html へのファイル書き出し処理（ANSIカラーコードを除去して保存）
-    # --------------------------------------------------------------------------
+    # index.html へのファイル書き出し処理（f-string外でバックスラッシュ結合を実施）
     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     file_content_lines = [ansi_escape.sub('', line) for line in output_lines]
+    
+    joined_lines = '\n'.join(file_content_lines)
     
     html_output = f"""<!DOCTYPE html>
 <html lang="ja">
@@ -290,7 +288,7 @@ def fetch_schedule(base_date):
     </style>
 </head>
 <body>
-    <pre>{'\n'.join(file_content_lines)}</pre>
+    <pre>{joined_lines}</pre>
 </body>
 </html>
 """
