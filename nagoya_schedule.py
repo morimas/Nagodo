@@ -9,14 +9,17 @@ import os
 # ==============================================================================
 # 設定項目
 # ==============================================================================
-# 変更された新しいURLに合わせてここを更新します
+# 新しい正式なイベントカレンダー掲載URLにアップデート
 BASE_URL = "https://www.nagoya-dome.co.jp/enjoy/index.php"
 
 # 関係者イベントを非表示にする場合は True、表示する場合は False
 HIDE_PRIVATE_EVENTS = True
 
+# デバッグ用：取得した生HTMLをファイルに保存するかどうか
+DEBUG_DUMP = True
+
 # ==============================================================================
-# コンソールカラー定義
+# コンソールカラー定義（ANSI Escape Code）
 # ==============================================================================
 os.system('')  # Windows環境でのANSIエスケープシーケンス有効化
 
@@ -25,9 +28,29 @@ COLOR_RED = "\033[91m"    # 日曜日用（明るい赤）
 COLOR_RESET = "\033[0m"   # 色リセット
 
 # ==============================================================================
+# 除外対象のシステム文字列判定
+# ==============================================================================
+def is_system_text(text):
+    exact_ignore_words = {
+        "トップ", "カレンダー", "HOME", "pagetop", "次へ", "前へ", "戻る", 
+        "イベント", "バンテリン", "URL", "インフォメーション", "ニュース＆トピックス",
+        "フロアマップ", "売店検索", "ドラゴンズ観戦チケット", "SNS応援メッセージ",
+        "草野球", "交通アクセス", "ご来場の皆様へ", "ページ上部へ", "PCサイト",
+        "メニュー", "ホーム", "プライバシーポリシー", "サイトマップ", "ドームで楽しむ・遊ぶ"
+    }
+    if text in exact_ignore_words:
+        return True
+    if re.search(r'予定がありません', text):
+        return True
+    return False
+
+# ==============================================================================
 # 日付計算ロジック
 # ==============================================================================
 def get_target_date_range(base_date):
+    """
+    軸となる日(base_date)当日から「2回目の日曜日」までの日付リストを計算します。
+    """
     start_date = base_date
     days_to_first_sunday = (6 - start_date.weekday()) % 7
     days_to_second_sunday = days_to_first_sunday + 7
@@ -54,7 +77,7 @@ def fetch_schedule(base_date):
     print("＋--------------------------------------------------＋")
     print(f"  バンテリンドーム ナゴヤ イベントスケジュール")
     print(f"  対象期間: {range_start_str} 〜 {range_end_str}")
-    print(f"  取得先URL: {BASE_URL}")
+    print(f"  取得先: {BASE_URL}")
     if HIDE_PRIVATE_EVENTS:
         print("  ※関係者イベントは除外して表示中")
     print("＋--------------------------------------------------＋\n")
@@ -73,7 +96,7 @@ def fetch_schedule(base_date):
     }
 
     for y, m in years_months:
-        # 新しいURL構造にパラメータが必要な場合、ここで調整します
+        # 新しいURL形式（パラメータ保持またはそのまま取得）
         target_url = f"{BASE_URL}?year={y}&month={m:02d}"
         
         try:
@@ -85,7 +108,10 @@ def fetch_schedule(base_date):
                 except UnicodeDecodeError:
                     html_text = raw_bytes.decode('shift_jis', errors='ignore')
 
-                print(f"[情報] {y}年{m}月のページ取得に成功しました（サイズ: {len(html_text)}文字）")
+                if DEBUG_DUMP:
+                    dump_filename = f"debug_{y}_{m:02d}.html"
+                    with open(dump_filename, "w", encoding="utf-8") as f:
+                        f.write(html_text)
 
                 html_text = html.unescape(html_text)
                 cells = re.findall(r'<td[^>]*>(.*?)</td>', html_text, flags=re.DOTALL | re.IGNORECASE)
@@ -113,6 +139,8 @@ def fetch_schedule(base_date):
                         if not clean_text:
                             continue
 
+                        if is_system_text(clean_text):
+                            continue
                         if re.search(r'(TOUR|LIVE|フェス|マラソン|トップ|カレンダー|HOME|インフォメーション|2026年|2027年)', clean_text):
                             continue
                         if any(kw in clean_text for kw in ["Anniversary", "トライアウト", "WORLD TOUR", "BLOOD SAGA", "Romantic Tour", "No.III", "愛知2027"]):
@@ -123,7 +151,8 @@ def fetch_schedule(base_date):
                                 events_by_date[date_key].append(clean_text)
 
         except urllib.error.HTTPError as e:
-            print(f"[通信注意] {y}年{m}月のデータ取得に失敗しました (HTTP Error {e.code}: {e.reason})")
+            print(f"[情報] {y}年{m}月のページ取得ステータス: HTTP Error {e.code}")
+            continue
         except Exception as e:
             print(f"[通信注意] {y}年{m}月のデータ取得エラー: {e}")
 
@@ -143,6 +172,8 @@ def fetch_schedule(base_date):
                 title = titles[i] if i < len(titles) else ""
                 time_info = times[i] if i < len(times) else ""
 
+                if is_system_text(title):
+                    continue
                 if HIDE_PRIVATE_EVENTS and "関係者イベント" in title:
                     continue
 
@@ -176,7 +207,7 @@ def fetch_schedule(base_date):
 
     print("----------------------------------------------------")
     if total_event_count == 0:
-        print(" 対象期間中に該当する一般イベントはありません（またはURL要確認）。")
+        print(" 対象期間中に該当する一般イベントはありません。")
     else:
         print(f" 該当イベント数: 計 {total_event_count} 件")
     print("----------------------------------------------------")
