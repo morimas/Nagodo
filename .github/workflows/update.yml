@@ -12,9 +12,11 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
+      # 最新のactions/checkoutを使用
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 最新のactions/setup-pythonを使用
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
