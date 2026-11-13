@@ -9,16 +9,20 @@ import os
 # ==============================================================================
 # 設定項目
 # ==============================================================================
-BASE_URL = "https://www.nagoya-dome.co.jp/sp/eventcalen.php"
+# 新しいURLや別のパスに切り替える場合はここを変更してください
+BASE_URL = "https://www.nagoya-dome.co.jp/enjoy/index.php" 
+# ※従来のカレンダーに戻す場合や別パスの場合は適宜書き換えてください
 
 # 関係者イベントを非表示にする場合は True、表示する場合は False
 HIDE_PRIVATE_EVENTS = True
 
+# デバッグ用：取得した生HTMLをファイルに保存するかどうか
+DEBUG_DUMP = True
+
 # ==============================================================================
 # コンソールカラー定義（ANSI Escape Code）
-# Windows標準コマンドプロンプト用のVT100エスケープシーケンス有効化
 # ==============================================================================
-os.system('')  # Windows環境でのANSIエスケープシーケンスを有効化
+os.system('')  # Windows環境でのANSIエスケープシーケンス有効化
 
 COLOR_BLUE = "\033[94m"   # 土曜日用（明るい青）
 COLOR_RED = "\033[91m"    # 日曜日用（明るい赤）
@@ -30,8 +34,6 @@ COLOR_RESET = "\033[0m"   # 色リセット
 def get_target_date_range(base_date):
     """
     軸となる日(base_date)当日から「2回目の日曜日」までの日付リストを計算します。
-    - 実行日が日曜日の場合：当日の日曜日(1回目) ＋ 7日後(2回目)
-    - 実行日が月〜土曜日の場合：直近の日曜日(1回目) ＋ 7日後(2回目)
     """
     start_date = base_date
     days_to_first_sunday = (6 - start_date.weekday()) % 7
@@ -77,64 +79,68 @@ def fetch_schedule(base_date):
     }
 
     for y, m in years_months:
+        # パラメータの付与方法が変更されている可能性があるため、柔軟に対応
         target_url = f"{BASE_URL}?year={y}&month={m:02d}"
         
         try:
             req = urllib.request.Request(target_url, headers=headers)
-            try:
-                with urllib.request.urlopen(req, timeout=15, context=ssl_context) as resp:
-                    raw_bytes = resp.read()
-                    try:
-                        html_text = raw_bytes.decode('utf-8')
-                    except UnicodeDecodeError:
-                        html_text = raw_bytes.decode('shift_jis', errors='ignore')
+            with urllib.request.urlopen(req, timeout=15, context=ssl_context) as resp:
+                raw_bytes = resp.read()
+                try:
+                    html_text = raw_bytes.decode('utf-8')
+                except UnicodeDecodeError:
+                    html_text = raw_bytes.decode('shift_jis', errors='ignore')
 
-                    html_text = html.unescape(html_text)
-                    cells = re.findall(r'<td[^>]*>(.*?)</td>', html_text, flags=re.DOTALL | re.IGNORECASE)
+                # デバッグ用に取得したHTMLをローカルに保存（構造変化の確認用）
+                if DEBUG_DUMP:
+                    dump_filename = f"debug_{y}_{m:02d}.html"
+                    with open(dump_filename, "w", encoding="utf-8") as f:
+                        f.write(html_text)
+                    print(f"[情報] デバッグ用に {dump_filename} を保存しました。")
 
-                    for cell in cells:
-                        date_match = re.search(r'(\d{1,2})[/\u6708](\d{1,2})[\u65e5]?', cell)
-                        if not date_match:
+                html_text = html.unescape(html_text)
+                cells = re.findall(r'<td[^>]*>(.*?)</td>', html_text, flags=re.DOTALL | re.IGNORECASE)
+
+                for cell in cells:
+                    date_match = re.search(r'(\d{1,2})[/\u6708](\d{1,2})[\u65e5]?', cell)
+                    if not date_match:
+                        continue
+
+                    found_m = int(date_match.group(1))
+                    found_d = int(date_match.group(2))
+
+                    if found_m != m:
+                        continue
+
+                    date_key = (m, found_d)
+                    if date_key not in events_by_date:
+                        events_by_date[date_key] = []
+
+                    lines = re.split(r'<br\s*/?>', cell, flags=re.IGNORECASE)
+                    for line in lines:
+                        clean_text = re.sub(r'<[^>]+>', ' ', line).strip()
+                        clean_text = re.sub(r'\s+', ' ', clean_text)
+
+                        if not clean_text:
                             continue
 
-                        found_m = int(date_match.group(1))
-                        found_d = int(date_match.group(2))
-
-                        if found_m != m:
+                        if re.search(r'(TOUR|LIVE|フェス|マラソン|トップ|カレンダー|HOME|インフォメーション|2026年|2027年)', clean_text):
+                            continue
+                        if any(kw in clean_text for kw in ["Anniversary", "トライアウト", "WORLD TOUR", "BLOOD SAGA", "Romantic Tour", "No.III", "愛知2027"]):
                             continue
 
-                        date_key = (m, found_d)
-                        if date_key not in events_by_date:
-                            events_by_date[date_key] = []
+                        if not re.search(r'^\d{1,2}[/\u6708]\d{1,2}[\u65e5]?$', clean_text):
+                            if clean_text not in events_by_date[date_key]:
+                                events_by_date[date_key].append(clean_text)
 
-                        lines = re.split(r'<br\s*/?>', cell, flags=re.IGNORECASE)
-                        for line in lines:
-                            clean_text = re.sub(r'<[^>]+>', ' ', line).strip()
-                            clean_text = re.sub(r'\s+', ' ', clean_text)
-
-                            if not clean_text:
-                                continue
-
-                            if re.search(r'(TOUR|LIVE|フェス|マラソン|トップ|カレンダー|HOME|インフォメーション|2026年|2027年)', clean_text):
-                                continue
-                            if any(kw in clean_text for kw in ["Anniversary", "トライアウト", "WORLD TOUR", "BLOOD SAGA", "Romantic Tour", "No.III", "愛知2027"]):
-                                continue
-
-                            if not re.search(r'^\d{1,2}[/\u6708]\d{1,2}[\u65e5]?$', clean_text):
-                                if clean_text not in events_by_date[date_key]:
-                                    events_by_date[date_key].append(clean_text)
-
-            except urllib.error.HTTPError as e:
-                if e.code == 404:
-                    print(f"[情報] {y}年{m}月のイベントページは現在公開されていません (404)")
-                    continue
-                else:
-                    print(f"[通信注意] {y}年{m}月のデータ取得に失敗しました (HTTP Error {e.code})")
-            except Exception as e:
-                print(f"[通信注意] {y}年{m}月のデータ取得エラー: {e}")
-
-        except Exception as err:
-            print(f"[通信注意] {y}年{m}月の処理に失敗しました ({err})")
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                print(f"[情報] {y}年{m}月のページが見つかりません (404)。URLやパスが変更されている可能性があります。")
+                continue
+            else:
+                print(f"[通信注意] {y}年{m}月のデータ取得に失敗しました (HTTP Error {e.code})")
+        except Exception as e:
+            print(f"[通信注意] {y}年{m}月のデータ取得エラー: {e}")
 
     total_event_count = 0
 
