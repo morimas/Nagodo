@@ -9,23 +9,47 @@ import os
 # ==============================================================================
 # 設定項目
 # ==============================================================================
-# 新しい正式なイベントカレンダー掲載URLにアップデート
-BASE_URL = "https://www.nagoya-dome.co.jp/enjoy/index.php"
+BASE_URL = "https://www.nagoya-dome.co.jp/sp/eventcalen.php"
 
 # 関係者イベントを非表示にする場合は True、表示する場合は False
 HIDE_PRIVATE_EVENTS = True
 
-# デバッグ用：取得した生HTMLをファイルに保存するかどうか
-DEBUG_DUMP = True
-
 # ==============================================================================
 # コンソールカラー定義（ANSI Escape Code）
 # ==============================================================================
-os.system('')  # Windows環境でのANSIエスケープシーケンス有効化
+os.system('')  # Windows環境でのANSIエスケープシーケンスを有効化
 
 COLOR_BLUE = "\033[94m"   # 土曜日用（明るい青）
 COLOR_RED = "\033[91m"    # 日曜日用（明るい赤）
 COLOR_RESET = "\033[0m"   # 色リセット
+
+# ==============================================================================
+# ノイズ（不要な会社名・電話番号・入庫案内等）のクレンジング処理
+# ==============================================================================
+def clean_noise(text):
+    if not text:
+        return ""
+    
+    # 電話番号の削除
+    text = re.sub(r'\d{2,4}-\d{2,4}-\d{4}', '', text)
+    text = re.sub(r'0570-\d{3}-\d{3}', '', text)
+    
+    # 入庫情報の削除
+    text = re.sub(r'※\s*\d{1,2}:\d{2}\s*入庫開始', '', text)
+    
+    # 営業時間やナビダイヤルの削除
+    text = re.sub(r'（全日[^）]+）', '', text)
+    text = re.sub(r'（ナビダイヤル）', '', text)
+    
+    # プロモーション会社名等の削除
+    ignore_phrases = [
+        "サンデーフォークプロモーション",
+        "中日ドラゴンズコールセンター",
+    ]
+    for p in ignore_phrases:
+        text = text.replace(p, '')
+        
+    return text.strip()
 
 # ==============================================================================
 # 除外対象のシステム文字列判定
@@ -36,7 +60,7 @@ def is_system_text(text):
         "イベント", "バンテリン", "URL", "インフォメーション", "ニュース＆トピックス",
         "フロアマップ", "売店検索", "ドラゴンズ観戦チケット", "SNS応援メッセージ",
         "草野球", "交通アクセス", "ご来場の皆様へ", "ページ上部へ", "PCサイト",
-        "メニュー", "ホーム", "プライバシーポリシー", "サイトマップ", "ドームで楽しむ・遊ぶ"
+        "メニュー", "ホーム", "プライバシーポリシー", "サイトマップ"
     }
     if text in exact_ignore_words:
         return True
@@ -48,9 +72,6 @@ def is_system_text(text):
 # 日付計算ロジック
 # ==============================================================================
 def get_target_date_range(base_date):
-    """
-    軸となる日(base_date)当日から「2回目の日曜日」までの日付リストを計算します。
-    """
     start_date = base_date
     days_to_first_sunday = (6 - start_date.weekday()) % 7
     days_to_second_sunday = days_to_first_sunday + 7
@@ -77,7 +98,6 @@ def fetch_schedule(base_date):
     print("＋--------------------------------------------------＋")
     print(f"  バンテリンドーム ナゴヤ イベントスケジュール")
     print(f"  対象期間: {range_start_str} 〜 {range_end_str}")
-    print(f"  取得先: {BASE_URL}")
     if HIDE_PRIVATE_EVENTS:
         print("  ※関係者イベントは除外して表示中")
     print("＋--------------------------------------------------＋\n")
@@ -90,13 +110,12 @@ def fetch_schedule(base_date):
     ssl_context.verify_mode = ssl.CERT_NONE
 
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
     }
 
     for y, m in years_months:
-        # 新しいURL形式（パラメータ保持またはそのまま取得）
         target_url = f"{BASE_URL}?year={y}&month={m:02d}"
         
         try:
@@ -108,79 +127,112 @@ def fetch_schedule(base_date):
                 except UnicodeDecodeError:
                     html_text = raw_bytes.decode('shift_jis', errors='ignore')
 
-                if DEBUG_DUMP:
-                    dump_filename = f"debug_{y}_{m:02d}.html"
-                    with open(dump_filename, "w", encoding="utf-8") as f:
-                        f.write(html_text)
-
                 html_text = html.unescape(html_text)
+                
                 cells = re.findall(r'<td[^>]*>(.*?)</td>', html_text, flags=re.DOTALL | re.IGNORECASE)
+                if not cells:
+                    cells = re.findall(r'<(?:div|li|p)[^>]*>(.*?)<\/(?:div|li|p)>', html_text, flags=re.DOTALL | re.IGNORECASE)
+
+                current_key = None
 
                 for cell in cells:
-                    date_match = re.search(r'(\d{1,2})[/\u6708](\d{1,2})[\u65e5]?', cell)
-                    if not date_match:
+                    text_content = re.sub(r'<[^>]+>', ' ', cell).strip()
+                    text_content = re.sub(r'\s+', ' ', text_content)
+
+                    if not text_content:
                         continue
 
-                    found_m = int(date_match.group(1))
-                    found_d = int(date_match.group(2))
+                    date_match = re.search(r'(\d{1,2})[/\u6708](\d{1,2})[\u65e5]?', text_content)
+                    if date_match:
+                        found_m = int(date_match.group(1))
+                        found_d = int(date_match.group(2))
 
-                    if found_m != m:
-                        continue
+                        if found_m == m:
+                            current_key = (m, found_d)
+                            if current_key not in events_by_date:
+                                events_by_date[current_key] = []
 
-                    date_key = (m, found_d)
-                    if date_key not in events_by_date:
-                        events_by_date[date_key] = []
-
-                    lines = re.split(r'<br\s*/?>', cell, flags=re.IGNORECASE)
-                    for line in lines:
-                        clean_text = re.sub(r'<[^>]+>', ' ', line).strip()
-                        clean_text = re.sub(r'\s+', ' ', clean_text)
-
-                        if not clean_text:
+                            after_text = text_content[date_match.end():].strip()
+                            after_text = re.sub(r'^\s*[\(（]\s*[月火水木金土日]\s*[\)）]', '', after_text).strip()
+                            
+                            cleaned_after = clean_noise(after_text)
+                            if len(cleaned_after) > 1 and not is_system_text(cleaned_after):
+                                if cleaned_after not in events_by_date[current_key]:
+                                    events_by_date[current_key].append(cleaned_after)
                             continue
 
-                        if is_system_text(clean_text):
-                            continue
-                        if re.search(r'(TOUR|LIVE|フェス|マラソン|トップ|カレンダー|HOME|インフォメーション|2026年|2027年)', clean_text):
-                            continue
-                        if any(kw in clean_text for kw in ["Anniversary", "トライアウト", "WORLD TOUR", "BLOOD SAGA", "Romantic Tour", "No.III", "愛知2027"]):
-                            continue
+                    if current_key is not None:
+                        lines = re.split(r'<br\s*/?>', cell, flags=re.IGNORECASE)
+                        for line in lines:
+                            clean_line = re.sub(r'<[^>]+>', ' ', line).strip()
+                            clean_line = re.sub(r'\s+', ' ', clean_line)
 
-                        if not re.search(r'^\d{1,2}[/\u6708]\d{1,2}[\u65e5]?$', clean_text):
-                            if clean_text not in events_by_date[date_key]:
-                                events_by_date[date_key].append(clean_text)
+                            if not clean_line:
+                                continue
+                            if is_system_text(clean_line):
+                                continue
+                            if re.search(r'^\d{1,2}[/\u6708]\d{1,2}[\u65e5]?$', clean_line):
+                                continue
+
+                            cleaned_text = clean_noise(clean_line)
+                            if cleaned_text and len(cleaned_text) > 1:
+                                if cleaned_text not in events_by_date[current_key]:
+                                    events_by_date[current_key].append(cleaned_text)
 
         except urllib.error.HTTPError as e:
-            print(f"[情報] {y}年{m}月のページ取得ステータス: HTTP Error {e.code}")
-            continue
+            if e.code == 404:
+                continue
+            else:
+                print(f"[通信注意] {y}年{m}月のデータ取得に失敗しました (HTTP Error {e.code})")
         except Exception as e:
             print(f"[通信注意] {y}年{m}月のデータ取得エラー: {e}")
 
     total_event_count = 0
 
+    # 対象期間の日付順に出力（予定のない日は完全にスキップ＝空欄非表示）
     for current_date in target_dates:
         key = (current_date.month, current_date.day)
         raw_items = events_by_date.get(key, [])
 
         if raw_items:
-            times = [item for item in raw_items if "開場" in item or "開始" in item]
-            titles = [item for item in raw_items if "開場" not in item and "開始" not in item]
+            times = []
+            titles = []
+            
+            for item in raw_items:
+                found_times = re.findall(r'\d{1,2}:\d{2}', item)
+                for t in found_times:
+                    if t not in times:
+                        times.append(t)
+                
+                pure_title = re.sub(r'\d{1,2}:\d{2}', '', item).strip()
+                pure_title = re.sub(r'[／〜～]', ' ', pure_title).strip()
+                pure_title = re.sub(r'\s+', ' ', pure_title)
+                
+                # 「開場」「開始」などの単体ワードを完全に除外
+                if pure_title in ["開場", "開始", "／", "開場 開始", ""] or re.match(r'^[開場開始\s／]+$', pure_title):
+                    continue
+                
+                if pure_title and len(pure_title) > 1:
+                    if not is_system_text(pure_title):
+                        if HIDE_PRIVATE_EVENTS and "関係者イベント" in pure_title:
+                            continue
+                        if pure_title not in titles:
+                            titles.append(pure_title)
+
+            time_str = ""
+            if len(times) >= 2:
+                time_str = f"開始 {times[1]}（開場 {times[0]}）"
+            elif len(times) == 1:
+                time_str = f"開始 {times[0]}"
 
             valid_events = []
-            max_len = max(len(titles), len(times))
-            for i in range(max_len):
-                title = titles[i] if i < len(titles) else ""
-                time_info = times[i] if i < len(times) else ""
+            seen_titles = set()
+            for title in titles:
+                if title not in seen_titles:
+                    seen_titles.add(title)
+                    valid_events.append(title)
 
-                if is_system_text(title):
-                    continue
-                if HIDE_PRIVATE_EVENTS and "関係者イベント" in title:
-                    continue
-
-                if title or time_info:
-                    valid_events.append((title, time_info))
-
-            if valid_events:
+            if valid_events or time_str:
                 weekday_num = current_date.weekday()
                 weekday_kanji = ["月", "火", "水", "木", "金", "土", "日"][weekday_num]
                 formatted_date_raw = current_date.strftime(f"%Y年%m月%d日({weekday_kanji})")
@@ -192,17 +244,15 @@ def fetch_schedule(base_date):
                 else:
                     display_date = formatted_date_raw
 
-                print(f"■ {display_date}")
+                print(f" {display_date}")
 
-                for title, time_info in valid_events:
-                    if title:
-                        print(f"   │")
-                        print(f"   └─ {title}")
-                    if time_info:
-                        print(f"   │")
-                        print(f"   └─ {time_info}")
-                    
+                for title in valid_events:
+                    print(f"   └─ {title}")
                     total_event_count += 1
+                
+                if time_str:
+                    print(f"   └─ {time_str}")
+                
                 print()
 
     print("----------------------------------------------------")
@@ -212,6 +262,9 @@ def fetch_schedule(base_date):
         print(f" 該当イベント数: 計 {total_event_count} 件")
     print("----------------------------------------------------")
 
+# ==============================================================================
+# 実行部
+# ==============================================================================
 if __name__ == "__main__":
     try:
         if len(sys.argv) > 1:
