@@ -9,18 +9,14 @@ import os
 # ==============================================================================
 # 設定項目
 # ==============================================================================
-# 新しいURLや別のパスに切り替える場合はここを変更してください
-BASE_URL = "https://www.nagoya-dome.co.jp/enjoy/index.php" 
-# ※従来のカレンダーに戻す場合や別パスの場合は適宜書き換えてください
+# 変更された新しいURLに合わせてここを更新します
+BASE_URL = "https://www.nagoya-dome.co.jp/enjoy/index.php"
 
 # 関係者イベントを非表示にする場合は True、表示する場合は False
 HIDE_PRIVATE_EVENTS = True
 
-# デバッグ用：取得した生HTMLをファイルに保存するかどうか
-DEBUG_DUMP = True
-
 # ==============================================================================
-# コンソールカラー定義（ANSI Escape Code）
+# コンソールカラー定義
 # ==============================================================================
 os.system('')  # Windows環境でのANSIエスケープシーケンス有効化
 
@@ -32,9 +28,6 @@ COLOR_RESET = "\033[0m"   # 色リセット
 # 日付計算ロジック
 # ==============================================================================
 def get_target_date_range(base_date):
-    """
-    軸となる日(base_date)当日から「2回目の日曜日」までの日付リストを計算します。
-    """
     start_date = base_date
     days_to_first_sunday = (6 - start_date.weekday()) % 7
     days_to_second_sunday = days_to_first_sunday + 7
@@ -61,6 +54,7 @@ def fetch_schedule(base_date):
     print("＋--------------------------------------------------＋")
     print(f"  バンテリンドーム ナゴヤ イベントスケジュール")
     print(f"  対象期間: {range_start_str} 〜 {range_end_str}")
+    print(f"  取得先URL: {BASE_URL}")
     if HIDE_PRIVATE_EVENTS:
         print("  ※関係者イベントは除外して表示中")
     print("＋--------------------------------------------------＋\n")
@@ -79,7 +73,7 @@ def fetch_schedule(base_date):
     }
 
     for y, m in years_months:
-        # パラメータの付与方法が変更されている可能性があるため、柔軟に対応
+        # 新しいURL構造にパラメータが必要な場合、ここで調整します
         target_url = f"{BASE_URL}?year={y}&month={m:02d}"
         
         try:
@@ -91,12 +85,7 @@ def fetch_schedule(base_date):
                 except UnicodeDecodeError:
                     html_text = raw_bytes.decode('shift_jis', errors='ignore')
 
-                # デバッグ用に取得したHTMLをローカルに保存（構造変化の確認用）
-                if DEBUG_DUMP:
-                    dump_filename = f"debug_{y}_{m:02d}.html"
-                    with open(dump_filename, "w", encoding="utf-8") as f:
-                        f.write(html_text)
-                    print(f"[情報] デバッグ用に {dump_filename} を保存しました。")
+                print(f"[情報] {y}年{m}月のページ取得に成功しました（サイズ: {len(html_text)}文字）")
 
                 html_text = html.unescape(html_text)
                 cells = re.findall(r'<td[^>]*>(.*?)</td>', html_text, flags=re.DOTALL | re.IGNORECASE)
@@ -134,17 +123,12 @@ def fetch_schedule(base_date):
                                 events_by_date[date_key].append(clean_text)
 
         except urllib.error.HTTPError as e:
-            if e.code == 404:
-                print(f"[情報] {y}年{m}月のページが見つかりません (404)。URLやパスが変更されている可能性があります。")
-                continue
-            else:
-                print(f"[通信注意] {y}年{m}月のデータ取得に失敗しました (HTTP Error {e.code})")
+            print(f"[通信注意] {y}年{m}月のデータ取得に失敗しました (HTTP Error {e.code}: {e.reason})")
         except Exception as e:
             print(f"[通信注意] {y}年{m}月のデータ取得エラー: {e}")
 
     total_event_count = 0
 
-    # 対象期間の日付順に出力
     for current_date in target_dates:
         key = (current_date.month, current_date.day)
         raw_items = events_by_date.get(key, [])
@@ -192,14 +176,11 @@ def fetch_schedule(base_date):
 
     print("----------------------------------------------------")
     if total_event_count == 0:
-        print(" 対象期間中に該当する一般イベントはありません。")
+        print(" 対象期間中に該当する一般イベントはありません（またはURL要確認）。")
     else:
         print(f" 該当イベント数: 計 {total_event_count} 件")
     print("----------------------------------------------------")
 
-# ==============================================================================
-# 実行部
-# ==============================================================================
 if __name__ == "__main__":
     try:
         if len(sys.argv) > 1:
