@@ -98,6 +98,9 @@ def fetch_schedule(base_date):
     range_start_str = target_dates[0].strftime("%Y/%m/%d")
     range_end_str = target_dates[-1].strftime("%Y/%m/%d")
 
+    # 厳密な対象日付のセット（YYYY-MM-DD文字列）を作成
+    valid_date_set = {d.strftime("%Y-%m-%d") for d in target_dates}
+
     console_lines = []
     html_lines = []
 
@@ -151,8 +154,16 @@ def fetch_schedule(base_date):
                         found_m = int(date_match.group(1))
                         found_d = int(date_match.group(2))
 
-                        if found_m == m:
-                            current_key = (m, found_d)
+                        # 該当年月の年月日文字列を構築して、対象期間内か厳密にチェック
+                        try:
+                            # 12月などを前年のクエリで取得している場合の月ズレを考慮
+                            candidate_date = datetime(y, found_m, found_d)
+                            candidate_str = candidate_date.strftime("%Y-%m-%d")
+                        except ValueError:
+                            continue
+
+                        if candidate_str in valid_date_set:
+                            current_key = candidate_date.date()
                             if current_key not in events_by_date:
                                 events_by_date[current_key] = []
 
@@ -163,6 +174,9 @@ def fetch_schedule(base_date):
                             if len(cleaned_after) > 1 and not is_system_text(cleaned_after):
                                 if cleaned_after not in events_by_date[current_key]:
                                     events_by_date[current_key].append(cleaned_after)
+                            continue
+                        else:
+                            current_key = None # 対象外の日は無視
                             continue
 
                     if current_key is not None:
@@ -194,8 +208,7 @@ def fetch_schedule(base_date):
     total_event_count = 0
 
     for current_date in target_dates:
-        key = (current_date.month, current_date.day)
-        raw_items = events_by_date.get(key, [])
+        raw_items = events_by_date.get(current_date, [])
 
         if raw_items:
             times = []
@@ -207,11 +220,15 @@ def fetch_schedule(base_date):
                     if t not in times:
                         times.append(t)
                 
+                # 日付そのものや不要なエコー文字がタイトルに紛れ込むのを防ぐ
+                if re.search(r'^\d{1,2}/\d{1,2}', item):
+                    continue
+
                 pure_title = re.sub(r'\d{1,2}:\d{2}', '', item).strip()
                 pure_title = re.sub(r'[／〜～]', ' ', pure_title).strip()
                 pure_title = re.sub(r'\s+', ' ', pure_title)
                 
-                if pure_title in ["開場", "開始", "／", "開場 開始", ""] or re.match(r'^[開場開始\s／]+$', pure_title):
+                if pure_title in ["開場", "開始", "／", "開場 開始", "---", "開場 --- 開始", ""] or re.match(r'^[開場開始\s／\-]+$', pure_title):
                     continue
                 
                 if pure_title and len(pure_title) > 1:
@@ -221,6 +238,7 @@ def fetch_schedule(base_date):
                         if pure_title not in titles:
                             titles.append(pure_title)
 
+            # 有効な時刻（HH:MM）が少なくとも1つある場合のみ時間文字列を生成
             time_str = ""
             if len(times) >= 2:
                 time_str = f"開始 {times[1]}（開場 {times[0]}）"
@@ -262,11 +280,11 @@ def fetch_schedule(base_date):
                 log(f"{display_date_con}", f"{display_date_html}")
 
                 for title in valid_events:
-                    log(f"   └─ {title}", f"   └─ {html.escape(title)}")
+                    log(f" └ {title}", f" └ {html.escape(title)}")
                     total_event_count += 1
                 
                 if time_str:
-                    log(f"   └─ {time_str}", f"   └─ {html.escape(time_str)}")
+                    log(f" └ {time_str}", f" └ {html.escape(time_str)}")
                 
                 log("", "")
 
@@ -290,7 +308,7 @@ def fetch_schedule(base_date):
     <title>バンテリンドーム ナゴヤ イベントスケジュール</title>
     <style>
         body {{ font-family: monospace, sans-serif; background: #f4f4f4; padding: 20px; color: #333; }}
-        pre {{ background: #fff; padding: 15px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); font-size: 14px; line-height: 1.5; }}
+        pre {{ background: #fff; padding: 15px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); font-size: 13px; line-height: 1.4; word-break: break-all; white-space: pre-wrap; }}
     </style>
 </head>
 <body>
